@@ -8,29 +8,79 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ==================================================
+      # CHECKOUT
+      # ==================================================
+
       - name: Checkout
         uses: actions/checkout@v4
+
+
+      # ==================================================
+      # PYTHON
+      # ==================================================
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+
+      # ==================================================
+      # FFMPEG
+      # ==================================================
+
       - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+
+
+      # ==================================================
+      # DENO
+      # ==================================================
 
       - name: Install Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
 
+
+      # ==================================================
+      # PYTHON PACKAGES
+      # ==================================================
+
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade yt-dlp
           pip install -r requirements.txt
+
+
+      # ==================================================
+      # YOUTUBE COOKIES
+      # ==================================================
+
+      - name: Create YouTube cookies file
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          if [ -z "$YOUTUBE_COOKIES" ]; then
+            echo "YOUTUBE_COOKIES secret is not configured."
+            echo "The bot will continue without cookies."
+          else
+            printf '%s\n' "$YOUTUBE_COOKIES" > "$RUNNER_TEMP/youtube_cookies.txt"
+
+            chmod 600 "$RUNNER_TEMP/youtube_cookies.txt"
+
+            echo "YouTube cookies file created."
+          fi
+
+
+      # ==================================================
+      # CHECK VERSIONS
+      # ==================================================
 
       - name: Check versions
         run: |
@@ -39,8 +89,14 @@ jobs:
           deno --version
           ffmpeg -version | head -n 1
 
+
+      # ==================================================
+      # START TELEGRAM BOT
+      # ==================================================
+
       - name: Start Telegram Bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          YOUTUBE_COOKIES_FILE: ${{ runner.temp }}/youtube_cookies.txt
         run: |
           python bot.py
