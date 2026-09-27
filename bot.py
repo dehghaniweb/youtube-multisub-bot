@@ -324,6 +324,8 @@ async def start_download(update, context, one_language):
 
             "merge_output_format": "mp4",
 
+            "remote_components": ["ejs:github"],
+
             # -------------------------------------------------
             # SUBTITLES
             # -------------------------------------------------
