@@ -48,6 +48,30 @@ jobs:
 
 
       # ==================================================
+      # BGUTIL POT SERVER
+      # ==================================================
+
+      - name: Install bgutil POT server
+        run: |
+          git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git "$RUNNER_TEMP/bgutil-ytdlp-pot-provider"
+          cd "$RUNNER_TEMP/bgutil-ytdlp-pot-provider/server"
+          deno install
+
+      - name: Start bgutil POT server
+        run: |
+          cd "$RUNNER_TEMP/bgutil-ytdlp-pot-provider/server"
+          nohup deno run --allow-all src/main.ts > "$RUNNER_TEMP/bgutil.log" 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4416/ping; then
+              echo
+              echo "bgutil POT server is ready."
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:4416/ping
+
+      # ==================================================
       # PYTHON PACKAGES
       # ==================================================
 
