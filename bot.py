@@ -44,7 +44,6 @@ LANGUAGES = {
 def clean_url(text):
     text = text.strip()
 
-    # YouTube URL
     pattern = r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/[^\s]+"
 
     match = re.search(pattern, text)
@@ -297,35 +296,51 @@ async def start_download(update, context, one_language):
         # VIDEO + SUBTITLES
         # -------------------------------------------------
 
-        languages = lang1
+        subtitle_languages = [lang1]
 
         if lang2:
-            languages = f"{lang1},{lang2}"
+            subtitle_languages.append(lang2)
 
-        output_template = str(job_dir / "%(title)s.%(ext)s")
+        output_template = str(
+            job_dir / "%(title).180B.%(ext)s"
+        )
 
         ydl_opts = {
             "outtmpl": output_template,
 
-            # Best format that is generally compatible
-            "format": "best[ext=mp4]/best",
+            # Prefer MP4 when available.
+            "format": (
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+                "best[ext=mp4]/"
+                "best"
+            ),
+
+            "merge_output_format": "mp4",
 
             # Subtitles
             "writesubtitles": True,
             "writeautomaticsub": True,
+            "subtitleslangs": subtitle_languages,
 
-            "subtitleslangs": [
-                lang1,
-                *( [lang2] if lang2 else [] )
-            ],
-
-            "quiet": True,
-            "no_warnings": True,
-
+            # Do not download playlists.
             "noplaylist": True,
 
-            # Avoid huge thumbnails
+            # Network / extractor settings
+            "quiet": True,
+            "no_warnings": False,
+
+            # IPv4 can sometimes be more reliable on CI.
+            "source_address": "0.0.0.0",
+
+            # Retry transient network failures.
+            "retries": 3,
+            "fragment_retries": 3,
+
+            # Do not download thumbnails.
             "writethumbnail": False,
+
+            # Do not stop merely because one subtitle is unavailable.
+            "ignoreerrors": False,
         }
 
         await status_message.edit_text(
@@ -362,17 +377,13 @@ async def start_download(update, context, one_language):
         if lang2:
             sub2 = find_subtitle(job_dir, lang2)
 
-        # -------------------------------------------------
-        # IMPORTANT
-        # -------------------------------------------------
-
         if not sub1:
 
             await status_message.edit_text(
                 f"⚠️ برای {LANGUAGES[lang1]} "
                 "زیرنویس قابل دریافت پیدا نشد.\n\n"
-                "فعلاً این نسخه فقط زیرنویس‌هایی را "
-                "که YouTube در اختیار yt-dlp قرار می‌دهد دریافت می‌کند."
+                "YouTube برای این ویدئو زیرنویس موردنظر "
+                "را در اختیار yt-dlp قرار نداده است."
             )
 
             return
@@ -380,56 +391,66 @@ async def start_download(update, context, one_language):
         await status_message.edit_text(
             "✅ ویدئو دریافت شد.\n"
             "🔎 زیرنویس پیدا شد.\n\n"
-            "⚙️ مرحله چسباندن زیرنویس در حال آماده‌سازی است..."
+            "📤 در حال آماده‌سازی ارسال..."
         )
 
         # -------------------------------------------------
-        # CURRENT VERSION
+        # COPY SUBTITLE
         # -------------------------------------------------
 
-        # For now send original video + subtitle files.
-        # Burn-in / translation is added in the next stage.
-
-        subtitle1_name = (
-            f"subtitle_{lang1}{sub1.suffix}"
-        )
+        subtitle1_name = f"subtitle_{lang1}{sub1.suffix}"
 
         subtitle1 = job_dir / subtitle1_name
 
         shutil.copy2(sub1, subtitle1)
 
-        # Telegram video size check
+        # -------------------------------------------------
+        # TELEGRAM SIZE CHECK
+        # -------------------------------------------------
+
         video_size_mb = video.stat().st_size / (1024 * 1024)
 
         if video_size_mb > 49:
 
             await status_message.edit_text(
                 f"⚠️ حجم ویدئو حدود {video_size_mb:.1f} MB است.\n\n"
-                "ارسال مستقیم این فایل از Bot API ممکن است "
-                "با محدودیت حجم Telegram مواجه شود."
+                "این نسخه فعلاً برای ارسال مستقیم "
+                "ویدئوهای بزرگ مناسب نیست."
             )
 
             return
+
+        # -------------------------------------------------
+        # SEND VIDEO
+        # -------------------------------------------------
 
         await status_message.edit_text(
             "📤 در حال ارسال ویدئو..."
         )
 
-        await context.bot.send_video(
-            chat_id=chat_id,
-            video=video.open("rb"),
-            caption=(
-                f"🎬 YouTube MultiSub\n"
-                f"🌍 {LANGUAGES[lang1]}"
-            ),
-            supports_streaming=True,
-        )
+        with video.open("rb") as video_file:
 
-        await context.bot.send_document(
-            chat_id=chat_id,
-            document=subtitle1.open("rb"),
-            caption=f"📝 Subtitle — {LANGUAGES[lang1]}",
-        )
+            await context.bot.send_video(
+                chat_id=chat_id,
+                video=video_file,
+                caption=(
+                    "🎬 YouTube MultiSub\n"
+                    f"🌍 {LANGUAGES[lang1]}"
+                ),
+                supports_streaming=True,
+            )
+
+        # -------------------------------------------------
+        # SEND FIRST SUBTITLE
+        # -------------------------------------------------
+
+        with subtitle1.open("rb") as subtitle_file:
+
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=subtitle_file,
+                caption=f"📝 Subtitle — {LANGUAGES[lang1]}",
+            )
 
         # -------------------------------------------------
         # SECOND SUBTITLE
@@ -437,19 +458,19 @@ async def start_download(update, context, one_language):
 
         if lang2 and sub2:
 
-            subtitle2_name = (
-                f"subtitle_{lang2}{sub2.suffix}"
-            )
+            subtitle2_name = f"subtitle_{lang2}{sub2.suffix}"
 
             subtitle2 = job_dir / subtitle2_name
 
             shutil.copy2(sub2, subtitle2)
 
-            await context.bot.send_document(
-                chat_id=chat_id,
-                document=subtitle2.open("rb"),
-                caption=f"📝 Subtitle — {LANGUAGES[lang2]}",
-            )
+            with subtitle2.open("rb") as subtitle_file:
+
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=subtitle_file,
+                    caption=f"📝 Subtitle — {LANGUAGES[lang2]}",
+                )
 
         elif lang2 and not sub2:
 
@@ -469,14 +490,26 @@ async def start_download(update, context, one_language):
 
         print("ERROR:", repr(e))
 
-        await status_message.edit_text(
-            "❌ خطایی هنگام پردازش رخ داد.\n\n"
-            "لطفاً دوباره امتحان کن."
-        )
+        error_text = str(e)
+
+        if "Sign in to confirm" in error_text:
+
+            await status_message.edit_text(
+                "❌ YouTube درخواست GitHub را مسدود کرد.\n\n"
+                "پیغام YouTube:\n"
+                "Sign in to confirm you’re not a bot\n\n"
+                "در مرحله بعد روش دریافت YouTube را تغییر می‌دهیم."
+            )
+
+        else:
+
+            await status_message.edit_text(
+                "❌ خطایی هنگام پردازش رخ داد.\n\n"
+                "لطفاً دوباره امتحان کن."
+            )
 
     finally:
 
-        # Clean temporary files
         try:
             shutil.rmtree(job_dir, ignore_errors=True)
         except Exception:
