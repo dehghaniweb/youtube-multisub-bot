@@ -305,10 +305,17 @@ async def start_download(update, context, one_language):
             job_dir / "%(title).180B.%(ext)s"
         )
 
+        # =================================================
+        # YT-DLP SETTINGS
+        # =================================================
+
         ydl_opts = {
             "outtmpl": output_template,
 
-            # Prefer MP4 when available.
+            # -------------------------------------------------
+            # VIDEO FORMAT
+            # -------------------------------------------------
+
             "format": (
                 "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
                 "best[ext=mp4]/"
@@ -317,24 +324,53 @@ async def start_download(update, context, one_language):
 
             "merge_output_format": "mp4",
 
-            # Subtitles
+            # -------------------------------------------------
+            # SUBTITLES
+            # -------------------------------------------------
+
             "writesubtitles": True,
             "writeautomaticsub": True,
             "subtitleslangs": subtitle_languages,
 
-            # Do not download playlists.
+            # -------------------------------------------------
+            # YOUTUBE CLIENTS
+            # -------------------------------------------------
+            #
+            # android_vr currently does not require a PO Token
+            # for GVS according to the current yt-dlp guide.
+            #
+            # web_embedded is included as a fallback for videos
+            # that are available through YouTube's embedded player.
+            #
+            # -------------------------------------------------
+
+            "extractor_args": {
+                "youtube": {
+                    "player_client": [
+                        "android_vr",
+                        "web_embedded",
+                    ]
+                }
+            },
+
+            # -------------------------------------------------
+            # GENERAL
+            # -------------------------------------------------
+
             "noplaylist": True,
 
-            # Network / extractor settings
-            "quiet": True,
+            # Keep output visible during this diagnostic test.
+            "quiet": False,
             "no_warnings": False,
 
             # IPv4 can sometimes be more reliable on CI.
             "source_address": "0.0.0.0",
 
             # Retry transient network failures.
-            "retries": 3,
-            "fragment_retries": 3,
+            "retries": 5,
+            "fragment_retries": 5,
+
+            "socket_timeout": 30,
 
             # Do not download thumbnails.
             "writethumbnail": False,
@@ -498,6 +534,13 @@ async def start_download(update, context, one_language):
                 "❌ YouTube درخواست GitHub را مسدود کرد.\n\n"
                 "پیغام YouTube:\n"
                 "Sign in to confirm you’re not a bot\n\n"
+                "در مرحله بعد روش دریافت YouTube را تغییر می‌دهیم."
+            )
+
+        elif "PO Token" in error_text:
+
+            await status_message.edit_text(
+                "❌ YouTube برای این مسیر PO Token درخواست کرد.\n\n"
                 "در مرحله بعد روش دریافت YouTube را تغییر می‌دهیم."
             )
 
