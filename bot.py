@@ -323,6 +323,7 @@ async def start_download(update, context, one_language):
             ),
 
             "merge_output_format": "mp4",
+            "cookiefile": os.environ.get("YOUTUBE_COOKIES_FILE") or None,
 
             "remote_components": ["ejs:github"],
 
